@@ -282,24 +282,26 @@ function internalCommand(cmd) {
 function noop() {}
 
 function showhelp() {
-  var commands = [
-    ':listen [id] - to start <a href="/remote-debugging.html">remote debugging</a> session',
-    ':load &lt;script_url&gt; - to inject',
-    '      load also supports shortcuts, like jquery or lodash:<br />',
-    '      eg. :load jquery',
-    ':load &lt;url&gt; - to inject new DOM',
-    ':clear - to clear the history (accessed using cursor keys)',
-    ':history - list current session history',
-    ':about',
-    'copy(&lt;value&gt;) and $_ for last value',
-    '',
-    'Directions to <a href="/inject.html">inject</a> JS Console in to any page (useful for mobile debugging)',
-    '',
-    '<span style="color: green">version: ' + version + '</span>',
-  ];
+  var commands;
 
   if (injected) {
-    commands.push(':close - to hide the JS Console');
+    commands = [':close - to hide the JS Console'];
+  } else {
+    commands = [
+      ':listen [id] - to start <a href="/remote-debugging.html">remote debugging</a> session',
+      ':load &lt;script_url&gt; - to inject',
+      '      load also supports shortcuts, like jquery or lodash:<br />',
+      '      eg. :load jquery',
+      ':load &lt;url&gt; - to inject new DOM',
+      ':clear - to clear the history (accessed using cursor keys)',
+      ':history - list current session history',
+      ':about',
+      'copy(&lt;value&gt;) and $_ for last value',
+      '',
+      'Directions to <a href="/inject.html">inject</a> JS Console in to any page (useful for mobile debugging)',
+      '',
+      '<span style="color: green">version: ' + version + '</span>',
+    ];
   }
 
   // commands = commands.concat([
@@ -550,28 +552,6 @@ function removeSuggestion() {
   if (enableCC && cursor.nextSibling) cursor.parentNode.removeChild(cursor.nextSibling);
 }
 
-window._console = {
-  log: function () {
-    var l = arguments.length, i = 0;
-    for (; i < l; i++) {
-      log(stringify(arguments[i], true));
-    }
-  },
-  dir: function () {
-    var l = arguments.length, i = 0;
-    for (; i < l; i++) {
-      log(stringify(arguments[i]));
-    }
-  },
-  props: function (obj) {
-    var props = [], realObj;
-    try {
-      for (var p in obj) props.push(p);
-    } catch (e) {}
-    return props;
-  }
-};
-
 function showHistory() {
   var h = getHistory();
   h.shift();
@@ -619,6 +599,30 @@ document.addEventListener ?
     post(window.event.data);
   });
 
+
+window._console = {
+  log: function () {
+    var l = arguments.length, i = 0;
+    for (; i < l; i++) {
+      log(stringify(arguments[i], true));
+    }
+  },
+  dir: function () {
+    var l = arguments.length, i = 0;
+    for (; i < l; i++) {
+      log(stringify(arguments[i]));
+    }
+  },
+  props: function (obj) {
+    var props = [], realObj;
+    try {
+      for (var p in obj) props.push(p);
+    } catch (e) {}
+    return props;
+  }
+};
+
+
 var exec = document.getElementById('exec'),
     form = exec.form || {},
     output = document.getElementById('output'),
@@ -662,7 +666,7 @@ var exec = document.getElementById('exec'),
       },
       close: function () {
         if (injected) {
-          JSCONSOLE.console.style.display = 'none';
+          window.top['JSCONSOLE'].console.style.display = 'none';
           return 'hidden';
         } else {
           return 'noop';
@@ -695,6 +699,15 @@ var exec = document.getElementById('exec'),
               if (data.cmd != 'remote console.log') data.response = data.response.substr(1, data.response.length - 2); // fiddle to remove the [] around the repsonse
               echo(data.cmd);
               log(data.response, 'response');
+            }
+          };
+
+          sse.onerror = function (event) {
+            console.log(event);
+            if (sse.readyState === EventSource.CONNECTING) {
+              console.log('reconnecting');
+            } else if (source.readyState === EventSource.CLOSED) {
+              console.log('closed');
             }
           };
 
@@ -746,7 +759,20 @@ if (!injected) {
   sandbox.write('<script>var copy = window.top.copy; (function () { var fakeConsole = ' + fakeConsole + '; if (console != undefined) { for (var k in fakeConsole) { console[k] = fakeConsole[k]; } } else { console = fakeConsole; } })();</script>');
   sandbox.close();
 } else {
-  sandboxframe.contentWindow.eval('copy = window.top.copy; (function () { var fakeConsole = ' + fakeConsole + '; if (console != undefined) { for (var k in fakeConsole) { console[k] = fakeConsole[k]; } } else { console = fakeConsole; } })();');
+  if (window.top.console != undefined) {
+    for (var k in window._console) {
+      window.top.console[k] = window._console[k];
+    }
+  } else { 
+    window.top.console = window._console;
+  }
+  window.top.onerror = function(msg, file, line, col, error) {
+    log(msg, 'error');
+    log(file, 'error');
+    log(line, 'error');
+    log(col, 'error');
+    log(error.stack, 'error');
+  }
 }
 
 // tweaks to interface to allow focus
